@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Deep Research Agent</title>
+<style>
+  :root {
+    --bg: #0b0d12;
+    --panel: #12151c;
+    --panel-2: #171b24;
+    --border: #262b36;
+    --text: #e7e9ee;
+    --muted: #8b93a3;
+    --accent: #6ea8fe;
+    --good: #4fd0a0;
+    --warn: #f0b34d;
+    --bad: #f16d6d;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header {
+    padding: 28px 20px 10px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  header h1 { margin: 0 0 4px; font-size: 22px; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  main { max-width: 900px; margin: 0 auto; padding: 16px 20px 60px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .search-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type="text"] {
+    flex: 1;
+    min-width: 240px;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 11px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  select {
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 11px 8px;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  button {
+    background: var(--accent);
+    color: #0b0d12;
+    border: none;
+    padding: 11px 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    font-size: 14px;
+  }
+  button:disabled { opacity: 0.5; cursor: default; }
+
+  .steps { display: flex; flex-direction: column; gap: 6px; margin-top: 14px; }
+  .step {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: var(--muted);
+    padding: 6px 0;
+    border-bottom: 1px dashed var(--border);
+  }
+  .step:last-child { border-bottom: none; }
+  .step .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0;
+  }
+  .step .node-label { color: var(--text); font-weight: 600; min-width: 70px; }
+  .step .latency { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  h2.report-title { font-size: 18px; margin: 0 0 6px; }
+  .summary { font-size: 15px; line-height: 1.55; color: var(--text); margin-bottom: 18px; }
+  .section { margin-bottom: 16px; }
+  .section h3 { font-size: 14px; margin: 0 0 6px; color: var(--accent); }
+  .section p { margin: 0; line-height: 1.6; font-size: 14px; }
+  .cite { color: var(--accent); font-size: 11px; vertical-align: super; margin-left: 2px; }
+
+  .citations { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .citations ol { margin: 6px 0 0; padding-left: 20px; font-size: 13px; }
+  .citations a { color: var(--accent); word-break: break-all; }
+
+  .limitations { border-left: 3px solid var(--warn); padding-left: 12px; }
+  .limitations li { font-size: 13px; color: var(--muted); margin-bottom: 6px; line-height: 1.5; }
+
+  .trace-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; }
+  .trace-table th, .trace-table td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--muted); }
+  .trace-table th { color: var(--text); font-weight: 600; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+  .badge.good { background: rgba(79,208,160,0.15); color: var(--good); }
+  .badge.warn { background: rgba(240,179,77,0.15); color: var(--warn); }
+
+  .muted { color: var(--muted); font-size: 13px; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; padding: 20px; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<header>
+  <h1>🔎 Deep Research Agent</h1>
+  <p>Multi-agent, citation-verified research — plan → research (parallel) → verify → write, built on LangGraph.</p>
+</header>
+
+<main>
+  <div class="card">
+    <div class="search-row">
+      <input id="question" type="text" placeholder="Ask a research question, e.g. 'What are the tradeoffs between SQL and NoSQL for high-write workloads?'" />
+      <select id="maxSub">
+        <option value="2">2 subquestions</option>
+        <option value="3" selected>3 subquestions</option>
+        <option value="4">4 subquestions</option>
+      </select>
+      <button id="runBtn">Research</button>
+    </div>
+    <div id="steps" class="steps"></div>
+  </div>
+
+  <div id="reportCard" class="card" style="display:none;">
+    <h2 class="report-title">Report</h2>
+    <div id="summary" class="summary"></div>
+    <div id="sections"></div>
+    <div id="citations" class="citations"></div>
+  </div>
+
+  <div id="limitationsCard" class="card" style="display:none;">
+    <h2 class="report-title">⚠️ What this run could not verify</h2>
+    <ul id="limitations" class="limitations"></ul>
+  </div>
+
+  <div id="traceCard" class="card" style="display:none;">
+    <h2 class="report-title">Run trace / observability</h2>
+    <div id="traceSummary" class="muted"></div>
+    <table class="trace-table">
+      <thead><tr><th>Node</th><th>Step</th><th>Latency (ms)</th><th>Tokens</th></tr></thead>
+      <tbody id="traceBody"></tbody>
+    </table>
+  </div>
+</main>
+
+<footer>
+  Built by Joshil Fernandes · <a href="https://github.com/JoshilFernandes/deep-research-agent" target="_blank">source on GitHub</a>
+</footer>
+
+<script>
+const runBtn = document.getElementById('runBtn');
+const questionInput = document.getElementById('question');
+const stepsEl = document.getElementById('steps');
+const reportCard = document.getElementById('reportCard');
+const summaryEl = document.getElementById('summary');
+const sectionsEl = document.getElementById('sections');
+const citationsEl = document.getElementById('citations');
+const limitationsCard = document.getElementById('limitationsCard');
+const limitationsEl = document.getElementById('limitations');
+const traceCard = document.getElementById('traceCard');
+const traceSummaryEl = document.getElementById('traceSummary');
+const traceBody = document.getElementById('traceBody');
+
+function resetUI() {
+  stepsEl.innerHTML = '';
+  reportCard.style.display = 'none';
+  limitationsCard.style.display = 'none';
+  traceCard.style.display = 'none';
+  summaryEl.innerHTML = '';
+  sectionsEl.innerHTML = '';
+  citationsEl.innerHTML = '';
+  limitationsEl.innerHTML = '';
+  traceBody.innerHTML = '';
+}
+
+function addStep(step) {
+  const row = document.createElement('div');
+  row.className = 'step';
+  row.innerHTML = `<span class="dot"></span><span class="node-label">${step.node}</span><span>${step.label}${step.detail ? ' — ' + step.detail : ''}</span><span class="latency">${step.latency_ms ?? ''} ms</span>`;
+  stepsEl.appendChild(row);
+}
+
+function renderReport(report) {
+  reportCard.style.display = 'block';
+  summaryEl.textContent = report.summary;
+
+  const citeIndexByUrl = {};
+  report.citations.forEach((c, i) => { citeIndexByUrl[c.id] = i + 1; });
+
+  report.sections.forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'section';
+    const marks = s.citation_ids.map(id => `<sup class="cite">[${citeIndexByUrl[id]}]</sup>`).join('');
+    div.innerHTML = `<h3>${s.heading}</h3><p>${s.content}${marks}</p>`;
+    sectionsEl.appendChild(div);
+  });
+
+  if (report.citations.length) {
+    const ol = document.createElement('ol');
+    report.citations.forEach(c => {
+      const li = document.createElement('li');
+      li.innerHTML = `<a href="${c.url}" target="_blank" rel="noopener">${c.title || c.url}</a>`;
+      ol.appendChild(li);
+    });
+    citationsEl.innerHTML = '<strong>Sources</strong>';
+    citationsEl.appendChild(ol);
+  }
+
+  if (report.limitations && report.limitations.length) {
+    limitationsCard.style.display = 'block';
+    report.limitations.forEach(l => {
+      const li = document.createElement('li');
+      li.textContent = l;
+      limitationsEl.appendChild(li);
+    });
+  }
+}
+
+function renderTrace(trace) {
+  traceCard.style.display = 'block';
+  const total = trace.steps.reduce((a, s) => a + (s.latency_ms || 0), 0);
+  const tokens = trace.steps.reduce((a, s) => a + (s.tokens_in || 0) + (s.tokens_out || 0), 0);
+  traceSummaryEl.textContent = `model: ${trace.model} · total latency: ${total.toFixed(0)} ms · total tokens: ${tokens}`;
+  trace.steps.forEach(s => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${s.node}</td><td>${s.detail || s.label}</td><td>${s.latency_ms}</td><td>${s.tokens_in + s.tokens_out}</td>`;
+    traceBody.appendChild(tr);
+  });
+}
+
+async function runResearch() {
+  const question = questionInput.value.trim();
+  if (!question) return;
+  resetUI();
+  runBtn.disabled = true;
+  runBtn.textContent = 'Researching…';
+
+  try {
+    const resp = await fetch('/api/research', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question, max_subquestions: parseInt(document.getElementById('maxSub').value, 10) })
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const blocks = buffer.split('\n\n');
+      buffer = blocks.pop();
+      for (const block of blocks) {
+        const lines = block.split('\n');
+        let event = 'message', data = '';
+        for (const line of lines) {
+          if (line.startsWith('event:')) event = line.slice(6).trim();
+          if (line.startsWith('data:')) data += line.slice(5).trim();
+        }
+        if (!data) continue;
+        const parsed = JSON.parse(data);
+        if (event === 'step') addStep(parsed);
+        if (event === 'done') {
+          if (parsed.report) renderReport(parsed.report);
+          if (parsed.trace) renderTrace(parsed.trace);
+        }
+      }
+    }
+  } catch (err) {
+    stepsEl.innerHTML = `<div class="step" style="color:var(--bad)">Error: ${err.message}. Is the API running with a configured GROQ_API_KEY?</div>`;
+  } finally {
+    runBtn.disabled = false;
+    runBtn.textContent = 'Research';
+  }
+}
+
+runBtn.addEventListener('click', runResearch);
+questionInput.addEventListener('keydown', e => { if (e.key === 'Enter') runResearch(); });
+</script>
+</body>
+</html>
